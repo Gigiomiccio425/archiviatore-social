@@ -1,0 +1,104 @@
+# File da incollare in Zima OS / CasaOS:
+#   App Store  ->  "+"  ->  Install a customized app  ->  Import (YAML)
+#
+# L'immagine viene compilata da GitHub Actions e pubblicata su GHCR
+# (linux/amd64 + linux/arm64): CasaOS la scarica da sola, niente build sul NAS.
+
+name: archiviatore-social
+
+services:
+  archiviatore:
+    image: ghcr.io/gigiomiccio425/archiviatore-social:latest
+    container_name: archiviatore-social
+    restart: unless-stopped
+    ports:
+      - target: 8080
+        published: "8347"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/Media/Downloads
+        target: /downloads
+      - type: bind
+        source: /DATA/AppData/archiviatore-social/data
+        target: /data
+    environment:
+      TZ: Europe/Rome
+      MAX_WORKERS: "2"
+      MAX_HEIGHT: "0"
+      PREFER_MP4: "true"
+      AUDIO_FORMAT: "mp3"
+      AUDIO_QUALITY: "192"
+      WRITE_METADATA_FILE: "true"
+      WRITE_THUMBNAIL: "true"
+      WINDOWS_SAFE_NAMES: "true"
+      SKIP_EXISTING: "true"
+      UPDATE_YTDLP: "true"
+    x-casaos:
+      envs:
+        - container: MAX_WORKERS
+          description:
+            en_us: Parallel downloads
+            it_it: Download contemporanei
+        - container: MAX_HEIGHT
+          description:
+            en_us: Max video height (0 = best available)
+            it_it: Risoluzione massima (0 = la migliore disponibile)
+        - container: AUDIO_FORMAT
+          description:
+            en_us: Audio-only output format
+            it_it: Formato per il download solo-audio
+        - container: UPDATE_YTDLP
+          description:
+            en_us: Update yt-dlp on every container start
+            it_it: Aggiorna yt-dlp a ogni avvio
+        - container: TZ
+          description:
+            en_us: Timezone
+            it_it: Fuso orario
+      ports:
+        - container: "8080"
+          description:
+            en_us: Web interface
+            it_it: Interfaccia web
+      volumes:
+        - container: /downloads
+          description:
+            en_us: Downloaded media
+            it_it: Media scaricati
+        - container: /data
+          description:
+            en_us: Database and app state
+            it_it: Database e stato dell'app
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: archiviatore
+  author: self-hosted
+  developer: self-hosted
+  category: Media
+  index: /
+  port_map: "8347"
+  scheme: http
+  store_app_id: archiviatore-social
+  icon: https://raw.githubusercontent.com/Gigiomiccio425/archiviatore-social/main/app/static/icon.svg
+  thumbnail: ""
+  screenshot_link: []
+  title:
+    en_us: YouTube & Social Archiver
+    it_it: Archiviatore YouTube & Social
+  tagline:
+    en_us: Download and archive videos from YouTube, TikTok, Instagram, X
+    it_it: Scarica e archivia video da YouTube, TikTok, Instagram, X
+  description:
+    en_us: >-
+      Web UI to archive video and audio from YouTube, TikTok, Instagram, Twitter/X
+      and 1000+ other sites with yt-dlp. Background queue, live progress, tidy
+      platform/author/title folders, JSON metadata and a built-in gallery.
+    it_it: >-
+      Interfaccia web per archiviare video e audio da YouTube, TikTok, Instagram,
+      Twitter/X e oltre 1000 altri siti con yt-dlp. Coda in background,
+      avanzamento live, cartelle ordinate piattaforma/autore/titolo, metadati JSON
+      e galleria integrata.

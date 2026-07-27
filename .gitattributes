@@ -1,0 +1,5 @@
+# L'entrypoint deve avere fine riga LF, altrimenti il container non parte
+# ("exec format error" / "no such file or directory").
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

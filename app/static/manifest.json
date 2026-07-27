@@ -1,0 +1,13 @@
+{
+  "name": "Archiviatore YouTube & Social",
+  "short_name": "Archiviatore",
+  "description": "Scarica e archivia video e audio dai social sul NAS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

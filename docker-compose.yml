@@ -1,0 +1,131 @@
+# Archiviatore YouTube & Social - Zima OS / CasaOS
+#
+# Questo file compila l'immagine in locale (sviluppo o build sul NAS):
+#   docker compose up -d --build
+#
+# Per usare l'immagine gia' pronta da GHCR e la tile CasaOS con icona,
+# importa casaos-app.yml dalla UI: App Store -> "+" -> Install a customized app.
+
+name: archiviatore-social
+
+services:
+  archiviatore:
+    build: .
+    image: ghcr.io/gigiomiccio425/archiviatore-social:latest
+    container_name: archiviatore-social
+    restart: unless-stopped
+
+    ports:
+      # host:container - cambia 8347 se la porta e' gia' occupata
+      - "8347:8080"
+
+    volumes:
+      # Dove finiscono i media. Punta alla cartella del NAS che preferisci.
+      - /DATA/Media/Downloads:/downloads
+      # Database SQLite, cookie, stato. NON metterlo insieme ai media.
+      - /DATA/AppData/archiviatore-social/data:/data
+
+    environment:
+      TZ: Europe/Rome
+      # Download in parallelo. Su hardware Zima 2-3 e' il valore sano.
+      MAX_WORKERS: "2"
+      # 0 = massima risoluzione disponibile. Metti 1080 o 2160 per limitare.
+      MAX_HEIGHT: "0"
+      # true = preferisce mp4/h264: si riproduce ovunque, anche su iPhone.
+      PREFER_MP4: "true"
+      AUDIO_FORMAT: "mp3"
+      AUDIO_QUALITY: "192"
+      WRITE_METADATA_FILE: "true"
+      WRITE_THUMBNAIL: "true"
+      EMBED_SUBTITLES: "false"
+      SUBTITLE_LANGS: "it,en"
+      WINDOWS_SAFE_NAMES: "true"
+      INCLUDE_VIDEO_ID: "false"
+      SKIP_EXISTING: "true"
+      # Limite banda, es. "5M". Vuoto = illimitato.
+      RATE_LIMIT: ""
+      # Contenuti privati / login: metti cookies.txt (formato Netscape) in /data
+      # COOKIES_FILE: "/data/cookies.txt"
+      # Aggiorna yt-dlp a ogni avvio del container (consigliato: si rompe spesso)
+      UPDATE_YTDLP: "true"
+
+    # yt-dlp + ffmpeg su 4K possono mangiare RAM: tetto di sicurezza
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+    x-casaos:
+      envs:
+        - container: MAX_WORKERS
+          description:
+            en_us: Parallel downloads
+            it_it: Download contemporanei
+        - container: MAX_HEIGHT
+          description:
+            en_us: Max video height (0 = best available)
+            it_it: Risoluzione massima (0 = la migliore disponibile)
+        - container: AUDIO_FORMAT
+          description:
+            en_us: Audio-only output format
+            it_it: Formato per il download solo-audio
+        - container: UPDATE_YTDLP
+          description:
+            en_us: Update yt-dlp on every container start
+            it_it: Aggiorna yt-dlp a ogni avvio
+        - container: TZ
+          description:
+            en_us: Timezone
+            it_it: Fuso orario
+      ports:
+        - container: "8080"
+          description:
+            en_us: Web interface
+            it_it: Interfaccia web
+      volumes:
+        - container: /downloads
+          description:
+            en_us: Downloaded media (organized by platform/author)
+            it_it: Media scaricati (organizzati per piattaforma/autore)
+        - container: /data
+          description:
+            en_us: Database, cookies and app state
+            it_it: Database, cookie e stato dell'app
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: archiviatore
+  author: self-hosted
+  developer: self-hosted
+  category: Media
+  index: /
+  port_map: "8347"
+  scheme: http
+  store_app_id: archiviatore-social
+  icon: https://raw.githubusercontent.com/Gigiomiccio425/archiviatore-social/main/app/static/icon.svg
+  thumbnail: ""
+  screenshot_link: []
+  title:
+    en_us: YouTube & Social Archiver
+    it_it: Archiviatore YouTube & Social
+  tagline:
+    en_us: Download and archive videos from YouTube, TikTok, Instagram, X
+    it_it: Scarica e archivia video da YouTube, TikTok, Instagram, X
+  description:
+    en_us: >-
+      Simple web UI to archive videos and audio from YouTube, TikTok, Instagram,
+      Twitter/X and 1000+ other sites using yt-dlp. Background download queue with
+      live progress, clean folder layout (platform/author/title), JSON metadata
+      sidecar files and a built-in gallery to play or re-download your archive.
+    it_it: >-
+      Interfaccia web semplice per archiviare video e audio da YouTube, TikTok,
+      Instagram, Twitter/X e oltre 1000 altri siti tramite yt-dlp. Coda di download
+      in background con avanzamento in tempo reale, cartelle ordinate
+      (piattaforma/autore/titolo), file di metadati JSON e galleria integrata per
+      riprodurre o riscaricare l'archivio.
+  tips:
+    before_install:
+      en_us: Downloads go to /DATA/Media/Downloads by default. Change the volume if you want another folder.
+      it_it: I download finiscono in /DATA/Media/Downloads. Cambia il volume se vuoi un'altra cartella.

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+data/
+downloads/
+*.db
+*.db-wal
+*.db-shm
+.vscode/
+.idea/
+.claude/

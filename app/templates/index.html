@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>{{ app_name }}</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/static/manifest.json">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: { brand: { 500: '#e11d48', 600: '#be123c' } } } }
+    }
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { -webkit-tap-highlight-color: transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased" x-data="archiviatore()" x-init="init()">
+
+<!-- ============ HEADER ============ -->
+<header class="sticky top-0 z-30 backdrop-blur bg-slate-950/80 border-b border-slate-800">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+    <img src="/static/icon.svg" alt="" class="w-9 h-9 shrink-0">
+    <div class="min-w-0 flex-1">
+      <h1 class="font-bold text-base sm:text-lg truncate">{{ app_name }}</h1>
+      <p class="text-xs text-slate-400 truncate">
+        <span x-text="stats.done"></span> completati ·
+        <span x-text="stats.active"></span> in corso ·
+        <span x-text="fmtSize(stats.bytes)"></span>
+      </p>
+    </div>
+    <div class="w-2.5 h-2.5 rounded-full shrink-0"
+         :class="online ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'"
+         :title="online ? 'Connesso' : 'Server non raggiungibile'"></div>
+  </div>
+
+  <nav class="max-w-5xl mx-auto px-4 flex gap-1">
+    <template x-for="t in tabs" :key="t.id">
+      <button @click="switchTab(t.id)"
+              class="px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5"
+              :class="tab === t.id
+                ? 'border-brand-500 text-white'
+                : 'border-transparent text-slate-400 hover:text-slate-200'">
+        <span x-text="t.icon"></span>
+        <span x-text="t.label"></span>
+        <span x-show="t.id === 'coda' && stats.active > 0"
+              class="ml-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-brand-500 text-white"
+              x-text="stats.active"></span>
+      </button>
+    </template>
+  </nav>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-5 safe-bottom">
+
+  <!-- ============ TAB: SCARICA ============ -->
+  <section x-show="tab === 'scarica'" x-cloak class="space-y-5">
+    <form @submit.prevent="submit()" class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium mb-2">Link del contenuto</label>
+        <textarea x-model="form.url" rows="3" required
+                  placeholder="https://www.youtube.com/watch?v=...&#10;Puoi incollare piu' link, uno per riga"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm
+                         placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500
+                         focus:border-transparent resize-y"></textarea>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button type="button" @click="paste()"
+                  class="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+            Incolla dagli appunti
+          </button>
+          <button type="button" @click="form.url = ''" x-show="form.url"
+                  class="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+            Svuota
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium mb-2">Formato</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" @click="form.kind = 'video'"
+                  class="rounded-xl border p-3 text-left transition"
+                  :class="form.kind === 'video'
+                    ? 'border-brand-500 bg-brand-500/10'
+                    : 'border-slate-700 hover:border-slate-600'">
+            <div class="font-semibold text-sm">🎬 Video</div>
+            <div class="text-xs text-slate-400 mt-0.5">
+              {% if max_height %}Fino a {{ max_height }}p{% else %}Massima qualita'{% endif %} · MP4
+            </div>
+          </button>
+          <button type="button" @click="form.kind = 'audio'"
+                  class="rounded-xl border p-3 text-left transition"
+                  :class="form.kind === 'audio'
+                    ? 'border-brand-500 bg-brand-500/10'
+                    : 'border-slate-700 hover:border-slate-600'">
+            <div class="font-semibold text-sm">🎵 Solo audio</div>
+            <div class="text-xs text-slate-400 mt-0.5">{{ audio_format }} con copertina</div>
+          </button>
+        </div>
+      </div>
+
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input type="checkbox" x-model="form.playlist"
+               class="mt-0.5 w-5 h-5 rounded bg-slate-950 border-slate-600 text-brand-500
+                      focus:ring-brand-500 focus:ring-offset-slate-900">
+        <span>
+          <span class="text-sm font-medium">Scarica l'intera playlist / canale</span>
+          <span class="block text-xs text-slate-400">
+            Se spento, di un link playlist scarica solo il video puntato.
+          </span>
+        </span>
+      </label>
+
+      <button type="submit" :disabled="sending || !form.url.trim()"
+              class="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed
+                     transition rounded-xl py-3 font-semibold text-sm flex items-center justify-center gap-2">
+        <span x-show="!sending">⬇️ Scarica</span>
+        <span x-show="sending" x-cloak class="flex items-center gap-2">
+          <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+          </svg>
+          Invio...
+        </span>
+      </button>
+    </form>
+
+    <!-- ultimi job, scorciatoia -->
+    <div x-show="jobs.length > 0" x-cloak class="space-y-2">
+      <h2 class="text-sm font-semibold text-slate-400 px-1">Ultimi download</h2>
+      <template x-for="job in jobs.slice(0, 3)" :key="job.id">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-3">
+          <span class="text-lg shrink-0" x-text="statusIcon(job.status)"></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm truncate" x-text="job.title || job.url"></div>
+            <div class="text-xs text-slate-500 truncate" x-text="job.phase || statusLabel(job.status)"></div>
+          </div>
+          <span class="text-xs text-slate-400 shrink-0"
+                x-show="job.status === 'running'" x-text="Math.round(job.progress) + '%'"></span>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- ============ TAB: CODA ============ -->
+  <section x-show="tab === 'coda'" x-cloak class="space-y-3">
+    <div class="flex items-center justify-between gap-2">
+      <h2 class="font-semibold">Coda e storico</h2>
+      <button @click="clearFinished()" x-show="jobs.some(j => ['done','error','canceled'].includes(j.status))"
+              class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition">
+        Pulisci conclusi
+      </button>
+    </div>
+
+    <p x-show="jobs.length === 0" x-cloak class="text-center text-slate-500 py-12 text-sm">
+      Nessun download. Vai su <b>Scarica</b> e incolla un link.
+    </p>
+
+    <template x-for="job in jobs" :key="job.id">
+      <article class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div class="flex items-start gap-3">
+          <span class="text-xl shrink-0" x-text="statusIcon(job.status)"></span>
+          <div class="min-w-0 flex-1">
+            <h3 class="font-medium text-sm leading-snug break-words" x-text="job.title || job.url"></h3>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs text-slate-400">
+              <span x-show="job.platform" class="px-1.5 py-0.5 rounded bg-slate-800" x-text="job.platform"></span>
+              <span x-show="job.uploader" x-text="job.uploader" class="truncate max-w-[12rem]"></span>
+              <span x-text="job.kind === 'audio' ? '🎵 audio' : '🎬 video'"></span>
+              <span x-show="job.playlist" >· playlist</span>
+              <span class="text-slate-600" x-text="fmtDate(job.created_at)"></span>
+            </div>
+          </div>
+          <div class="flex gap-1 shrink-0">
+            <button x-show="['queued','running'].includes(job.status)" @click="cancel(job.id)"
+                    title="Annulla"
+                    class="w-8 h-8 grid place-items-center rounded-lg bg-slate-800 hover:bg-red-900 transition">✕</button>
+            <button x-show="['error','canceled'].includes(job.status)" @click="retry(job.id)"
+                    title="Riprova"
+                    class="w-8 h-8 grid place-items-center rounded-lg bg-slate-800 hover:bg-slate-700 transition">↻</button>
+            <button x-show="!['queued','running'].includes(job.status)" @click="removeJob(job.id)"
+                    title="Rimuovi dallo storico"
+                    class="w-8 h-8 grid place-items-center rounded-lg bg-slate-800 hover:bg-slate-700 transition">🗑</button>
+          </div>
+        </div>
+
+        <div x-show="['queued','running'].includes(job.status)">
+          <div class="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full bg-brand-500 transition-all duration-500"
+                 :class="job.status === 'queued' ? 'animate-pulse w-1/12' : ''"
+                 :style="job.status === 'running' ? `width:${job.progress || 0}%` : ''"></div>
+          </div>
+          <div class="flex flex-wrap justify-between gap-2 mt-1.5 text-xs text-slate-400">
+            <span x-text="job.phase || statusLabel(job.status)"></span>
+            <span>
+              <span x-show="job.status === 'running'" x-text="Math.round(job.progress || 0) + '%'"></span>
+              <span x-show="job.speed" x-text="' · ' + job.speed"></span>
+              <span x-show="job.eta" x-text="' · ' + job.eta + ' rimanenti'"></span>
+            </span>
+          </div>
+          <div x-show="job.items_total > 1" class="text-xs text-slate-500 mt-1">
+            Elemento <span x-text="(job.items_done || 0) + 1"></span> di <span x-text="job.items_total"></span>
+          </div>
+        </div>
+
+        <p x-show="job.status === 'error'" x-cloak
+           class="text-xs bg-red-950/50 border border-red-900 text-red-300 rounded-lg p-2 break-words"
+           x-text="job.error"></p>
+
+        <div x-show="job.status === 'done' && job.files && job.files.length" x-cloak class="space-y-1">
+          <template x-for="f in (job.files || [])" :key="f.rel_path">
+            <div class="flex items-center gap-2 text-xs bg-slate-950 rounded-lg px-2.5 py-1.5">
+              <span class="truncate flex-1" x-text="f.title || f.rel_path"></span>
+              <span class="text-slate-500 shrink-0" x-text="fmtSize(f.size)"></span>
+              <button @click="openPlayer({rel_path: f.rel_path, name: f.title, kind: guessKind(f.rel_path)})"
+                      class="shrink-0 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700">▶</button>
+              <a :href="'/api/files/download?path=' + encodeURIComponent(f.rel_path)"
+                 class="shrink-0 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700">⬇</a>
+            </div>
+          </template>
+        </div>
+      </article>
+    </template>
+  </section>
+
+  <!-- ============ TAB: GALLERIA ============ -->
+  <section x-show="tab === 'galleria'" x-cloak class="space-y-4">
+    <div class="flex flex-col sm:flex-row gap-2">
+      <input x-model.debounce.300ms="gallery.q" @input="loadFiles()" type="search"
+             placeholder="Cerca per titolo o autore..."
+             class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm
+                    placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500">
+      <div class="flex gap-2">
+        <select x-model="gallery.platform" @change="loadFiles()"
+                class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none">
+          <option value="">Tutte le piattaforme</option>
+          <template x-for="p in gallery.platforms" :key="p">
+            <option :value="p" x-text="p"></option>
+          </template>
+        </select>
+        <select x-model="gallery.kind" @change="loadFiles()"
+                class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none">
+          <option value="">Tutti</option>
+          <option value="video">Video</option>
+          <option value="audio">Audio</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-500 px-1">
+      <span x-text="gallery.total"></span> file · <span x-text="fmtSize(gallery.bytes)"></span>
+    </p>
+
+    <p x-show="gallery.items.length === 0" x-cloak class="text-center text-slate-500 py-12 text-sm">
+      Nessun file trovato.
+    </p>
+
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      <template x-for="f in gallery.items" :key="f.rel_path">
+        <article class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden group">
+          <button @click="openPlayer(f)" class="block w-full aspect-video bg-slate-950 relative">
+            <img x-show="f.thumb" loading="lazy"
+                 :src="'/api/files/stream?path=' + encodeURIComponent(f.thumb || '')"
+                 class="w-full h-full object-cover" alt="">
+            <div x-show="!f.thumb" class="w-full h-full grid place-items-center text-3xl"
+                 x-text="f.kind === 'audio' ? '🎵' : '🎬'"></div>
+            <span class="absolute inset-0 grid place-items-center bg-black/40 opacity-0
+                         group-hover:opacity-100 transition text-3xl">▶</span>
+            <span class="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded uppercase"
+                  x-text="f.ext"></span>
+          </button>
+          <div class="p-2.5">
+            <h3 class="text-xs font-medium leading-snug line-clamp-2" :title="f.name" x-text="f.name"></h3>
+            <p class="text-[11px] text-slate-500 truncate mt-0.5">
+              <span x-text="f.platform"></span><span x-show="f.author"> · </span><span x-text="f.author"></span>
+            </p>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-[11px] text-slate-500" x-text="fmtSize(f.size)"></span>
+              <div class="flex gap-1">
+                <a :href="'/api/files/download?path=' + encodeURIComponent(f.rel_path)"
+                   title="Scarica sul dispositivo"
+                   class="w-7 h-7 grid place-items-center rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">⬇</a>
+                <button @click="deleteFile(f)" title="Elimina dal NAS"
+                        class="w-7 h-7 grid place-items-center rounded-lg bg-slate-800 hover:bg-red-900 text-xs">🗑</button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </template>
+    </div>
+  </section>
+</main>
+
+<!-- ============ PLAYER MODALE ============ -->
+<div x-show="player.open" x-cloak @keydown.escape.window="closePlayer()"
+     class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3"
+     @click.self="closePlayer()">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden">
+    <div class="flex items-center gap-3 p-3 border-b border-slate-800">
+      <h3 class="text-sm font-medium truncate flex-1" x-text="player.item?.name"></h3>
+      <button @click="closePlayer()" class="w-8 h-8 grid place-items-center rounded-lg bg-slate-800 hover:bg-slate-700">✕</button>
+    </div>
+    <div class="bg-black">
+      <template x-if="player.open && player.item?.kind === 'audio'">
+        <audio class="w-full p-4" controls autoplay :src="player.src"></audio>
+      </template>
+      <template x-if="player.open && player.item?.kind !== 'audio'">
+        <video class="w-full max-h-[65vh]" controls autoplay playsinline :src="player.src"></video>
+      </template>
+    </div>
+    <div class="p-3 flex flex-wrap gap-2">
+      <a :href="'/api/files/download?path=' + encodeURIComponent(player.item?.rel_path || '')"
+         class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 transition">⬇ Scarica</a>
+      <button @click="showMeta()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700">
+        ℹ Metadati
+      </button>
+      <span class="text-xs text-slate-500 self-center truncate" x-text="player.item?.rel_path"></span>
+    </div>
+    <pre x-show="player.meta" x-cloak
+         class="max-h-52 overflow-auto text-[11px] bg-slate-950 m-3 mt-0 p-3 rounded-lg text-slate-300"
+         x-text="player.meta"></pre>
+  </div>
+</div>
+
+<!-- ============ TOAST ============ -->
+<div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[92%] max-w-sm space-y-2 safe-bottom">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="rounded-xl px-4 py-2.5 text-sm shadow-lg border"
+         :class="t.type === 'error'
+           ? 'bg-red-950 border-red-800 text-red-200'
+           : 'bg-emerald-950 border-emerald-800 text-emerald-200'"
+         x-text="t.msg"></div>
+  </template>
+</div>
+
+<script>
+function archiviatore() {
+  return {
+    tab: 'scarica',
+    tabs: [
+      { id: 'scarica',  label: 'Scarica',  icon: '⬇️' },
+      { id: 'coda',     label: 'Coda',     icon: '📋' },
+      { id: 'galleria', label: 'Galleria', icon: '🗂️' },
+    ],
+    form: { url: '', kind: 'video', playlist: false },
+    sending: false,
+    online: true,
+    jobs: [],
+    stats: { done: 0, active: 0, errors: 0, bytes: 0 },
+    gallery: { items: [], platforms: [], total: 0, bytes: 0, q: '', platform: '', kind: '' },
+    player: { open: false, item: null, src: '', meta: '' },
+    toasts: [],
+    _timer: null,
+
+    init() {
+      this.loadJobs();
+      this.loadFiles();
+      this.schedule();
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) { this.loadJobs(); this.schedule(); }
+      });
+    },
+
+    // ---- polling adattivo: veloce solo se c'e' qualcosa in corso
+    schedule() {
+      clearTimeout(this._timer);
+      const delay = this.stats.active > 0 ? 1500 : 6000;
+      this._timer = setTimeout(async () => {
+        if (!document.hidden) await this.loadJobs();
+        this.schedule();
+      }, delay);
+    },
+
+    async api(url, options = {}) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' }, ...options
+      });
+      this.online = true;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = body.detail;
+        throw new Error(
+          Array.isArray(detail) ? detail.map(d => d.msg).join(', ')
+                                : (detail || `Errore ${res.status}`)
+        );
+      }
+      return res.status === 204 ? null : res.json();
+    },
+
+    async loadJobs() {
+      try {
+        const data = await this.api('/api/jobs');
+        const wasActive = this.stats.active;
+        this.jobs = data.jobs;
+        this.stats = data.stats;
+        // un job appena concluso -> aggiorna la galleria
+        if (wasActive > 0 && this.stats.active === 0) this.loadFiles();
+      } catch (e) { this.online = false; }
+    },
+
+    async loadFiles() {
+      try {
+        const p = new URLSearchParams({
+          q: this.gallery.q, platform: this.gallery.platform, kind: this.gallery.kind
+        });
+        const data = await this.api('/api/files?' + p);
+        Object.assign(this.gallery, data);
+      } catch (e) { /* silenzioso */ }
+    },
+
+    async submit() {
+      this.sending = true;
+      try {
+        const data = await this.api('/api/download', {
+          method: 'POST', body: JSON.stringify(this.form)
+        });
+        this.toast(`${data.count} download messo in coda`);
+        this.form.url = '';
+        await this.loadJobs();
+        this.schedule();
+        this.tab = 'coda';
+      } catch (e) {
+        this.toast(e.message, 'error');
+      } finally {
+        this.sending = false;
+      }
+    },
+
+    async cancel(id)    { await this.act(`/api/jobs/${id}/cancel`, 'POST', 'Annullato'); },
+    async retry(id)     { await this.act(`/api/jobs/${id}/retry`,  'POST', 'Rimesso in coda'); },
+    async removeJob(id) { await this.act(`/api/jobs/${id}`,        'DELETE', 'Rimosso'); },
+
+    async act(url, method, okMsg) {
+      try {
+        await this.api(url, { method });
+        this.toast(okMsg);
+        await this.loadJobs();
+        this.schedule();
+      } catch (e) { this.toast(e.message, 'error'); }
+    },
+
+    async clearFinished() {
+      await this.act('/api/jobs/clear', 'POST', 'Storico pulito');
+    },
+
+    async deleteFile(f) {
+      if (!confirm(`Eliminare definitivamente "${f.name}" dal NAS?`)) return;
+      try {
+        await this.api('/api/files?path=' + encodeURIComponent(f.rel_path), { method: 'DELETE' });
+        this.toast('File eliminato');
+        this.loadFiles();
+      } catch (e) { this.toast(e.message, 'error'); }
+    },
+
+    openPlayer(item) {
+      this.player = {
+        open: true, item, meta: '',
+        src: '/api/files/stream?path=' + encodeURIComponent(item.rel_path)
+      };
+    },
+    closePlayer() { this.player = { open: false, item: null, src: '', meta: '' }; },
+
+    async showMeta() {
+      if (this.player.meta) { this.player.meta = ''; return; }
+      try {
+        const data = await this.api(
+          '/api/files/metadata?path=' + encodeURIComponent(this.player.item.rel_path));
+        this.player.meta = JSON.stringify(data, null, 2);
+      } catch (e) { this.toast(e.message, 'error'); }
+    },
+
+    async paste() {
+      try { this.form.url = await navigator.clipboard.readText(); }
+      catch { this.toast('Il browser non permette la lettura degli appunti', 'error'); }
+    },
+
+    switchTab(id) {
+      this.tab = id;
+      if (id === 'galleria') this.loadFiles();
+    },
+
+    toast(msg, type = 'ok') {
+      const id = Date.now() + Math.random();
+      this.toasts.push({ id, msg, type });
+      setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 4000);
+    },
+
+    // ---- helper di formattazione
+    statusIcon(s) {
+      return { queued: '⏳', running: '⬇️', done: '✅', error: '❌', canceled: '🚫' }[s] || '•';
+    },
+    statusLabel(s) {
+      return { queued: 'In coda', running: 'In corso', done: 'Completato',
+               error: 'Errore', canceled: 'Annullato' }[s] || s;
+    },
+    guessKind(path) {
+      return /\.(mp3|m4a|opus|ogg|wav|flac|aac)$/i.test(path) ? 'audio' : 'video';
+    },
+    fmtSize(bytes) {
+      if (!bytes) return '0 B';
+      const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(1024));
+      return (bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + u[i];
+    },
+    fmtDate(ts) {
+      if (!ts) return '';
+      return new Date(ts * 1000).toLocaleString('it-IT',
+        { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    },
+  }
+}
+</script>
+</body>
+</html>
