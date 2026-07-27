@@ -10,7 +10,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -21,6 +20,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # I nomi immagine Docker devono essere minuscoli, github.repository no:
+      # senza questo, un owner con maiuscole rompe ogni riferimento scritto a mano.
+      - name: Nome immagine in minuscolo
+        run: echo "IMAGE_LC=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       # amd64 (Zima classico) + arm64 (Zimablade/SBC): arm64 gira in emulazione
       - uses: docker/setup-qemu-action@v3
@@ -39,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_LC }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
@@ -66,7 +70,7 @@ jobs:
         run: |
           docker run -d --name smoke -p 8080:8080 \
             -e DOWNLOAD_DIR=/tmp/dl -e DATA_DIR=/tmp/data -e UPDATE_YTDLP=false \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_LC }}@${{ steps.push.outputs.digest }}
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/health; then
               echo "" && echo "smoke test OK" && exit 0
@@ -85,6 +89,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Nome immagine in minuscolo
+        run: echo "IMAGE_LC=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - name: Crea la GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -93,7 +99,7 @@ jobs:
             ## Immagine Docker
 
             ```
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            docker pull ghcr.io/${{ env.IMAGE_LC }}:${{ github.ref_name }}
             ```
 
             Piattaforme: `linux/amd64`, `linux/arm64`.
