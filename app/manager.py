@@ -324,6 +324,12 @@ class DownloadManager:
             if config.PREFER_MP4:
                 # h264+aac in mp4: si apre nel player del browser e su iOS
                 opts["format_sort"] = ["res", "ext:mp4:m4a", "vcodec:h264", "acodec:aac"]
+                # merge_output_format da solo non basta: se i flussi scelti non
+                # sono compatibili con mp4, yt-dlp ripiega su mkv e il browser
+                # non lo apre. Il remux corregge il contenitore senza ricodifica.
+                opts["postprocessors"].insert(
+                    0, {"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}
+                )
             if config.EMBED_SUBTITLES:
                 opts.update({
                     "writesubtitles": True,

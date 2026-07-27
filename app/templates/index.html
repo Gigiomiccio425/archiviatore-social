@@ -220,7 +220,7 @@
             <div class="flex items-center gap-2 text-xs bg-slate-950 rounded-lg px-2.5 py-1.5">
               <span class="truncate flex-1" x-text="f.title || f.rel_path"></span>
               <span class="text-slate-500 shrink-0" x-text="fmtSize(f.size)"></span>
-              <button @click="openPlayer({rel_path: f.rel_path, name: f.title, kind: guessKind(f.rel_path)})"
+              <button @click="openPlayer(itemFromPath(f.rel_path, f.title))"
                       class="shrink-0 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700">▶</button>
               <a :href="'/api/files/download?path=' + encodeURIComponent(f.rel_path)"
                  class="shrink-0 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700">⬇</a>
@@ -274,7 +274,9 @@
                  x-text="f.kind === 'audio' ? '🎵' : '🎬'"></div>
             <span class="absolute inset-0 grid place-items-center bg-black/40 opacity-0
                          group-hover:opacity-100 transition text-3xl">▶</span>
-            <span class="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded uppercase"
+            <span class="absolute bottom-1 right-1 text-[10px] px-1.5 py-0.5 rounded uppercase"
+                  :class="f.playable === false ? 'bg-amber-600/90 text-white' : 'bg-black/70'"
+                  :title="f.playable === false ? 'Il browser non riproduce questo formato' : ''"
                   x-text="f.ext"></span>
           </button>
           <div class="p-2.5">
@@ -310,15 +312,31 @@
     </div>
     <div class="bg-black">
       <template x-if="player.open && player.item?.kind === 'audio'">
-        <audio class="w-full p-4" controls autoplay :src="player.src"></audio>
+        <audio class="w-full p-4" controls autoplay preload="metadata"
+               :src="player.src" @error="onMediaError($event)"></audio>
       </template>
       <template x-if="player.open && player.item?.kind !== 'audio'">
-        <video class="w-full max-h-[65vh]" controls autoplay playsinline :src="player.src"></video>
+        <video class="w-full max-h-[65vh]" controls autoplay playsinline preload="metadata"
+               :src="player.src" @error="onMediaError($event)"></video>
       </template>
     </div>
+
+    <!-- contenitore che nessun browser apre: dirlo prima che l'utente ci sbatta -->
+    <div x-show="player.item && player.item.playable === false" x-cloak
+         class="m-3 mb-0 text-xs bg-amber-950/60 border border-amber-800 text-amber-200 rounded-lg p-2.5">
+      Formato <b x-text="(player.item?.ext || '').toUpperCase()"></b>: nessun browser sa riprodurlo.
+      Scaricalo e aprilo con VLC. I download nuovi finiscono in MP4.
+    </div>
+
+    <div x-show="player.error" x-cloak
+         class="m-3 mb-0 text-xs bg-red-950/60 border border-red-900 text-red-200 rounded-lg p-2.5 break-words"
+         x-text="player.error"></div>
+
     <div class="p-3 flex flex-wrap gap-2">
       <a :href="'/api/files/download?path=' + encodeURIComponent(player.item?.rel_path || '')"
          class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 transition">⬇ Scarica</a>
+      <a :href="player.src" target="_blank" rel="noopener"
+         class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700">↗ Apri in una scheda</a>
       <button @click="showMeta()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700">
         ℹ Metadati
       </button>
@@ -356,7 +374,7 @@ function archiviatore() {
     jobs: [],
     stats: { done: 0, active: 0, errors: 0, bytes: 0 },
     gallery: { items: [], platforms: [], total: 0, bytes: 0, q: '', platform: '', kind: '' },
-    player: { open: false, item: null, src: '', meta: '' },
+    player: { open: false, item: null, src: '', meta: '', error: '' },
     toasts: [],
     _timer: null,
 
@@ -462,11 +480,33 @@ function archiviatore() {
 
     openPlayer(item) {
       this.player = {
-        open: true, item, meta: '',
+        open: true, item, meta: '', error: '',
         src: '/api/files/stream?path=' + encodeURIComponent(item.rel_path)
       };
     },
-    closePlayer() { this.player = { open: false, item: null, src: '', meta: '' }; },
+    closePlayer() { this.player = { open: false, item: null, src: '', meta: '', error: '' }; },
+
+    // Il player mostra solo il play sbarrato: qui traduciamo il codice di
+    // errore e interroghiamo il server, cosi' si distingue un problema HTTP
+    // da un codec che il browser non sa decodificare.
+    async onMediaError(ev) {
+      const codes = {
+        1: 'riproduzione interrotta',
+        2: 'errore di rete durante lo scaricamento',
+        3: 'decodifica fallita: il browser non gestisce questo codec',
+        4: 'sorgente non supportata: contenitore o Content-Type non riconosciuto',
+      };
+      const err = ev?.target?.error;
+      let msg = 'Riproduzione fallita — ' + (codes[err?.code] || 'errore sconosciuto');
+      try {
+        const res = await fetch(this.player.src, { headers: { Range: 'bytes=0-0' } });
+        msg += `. Server: HTTP ${res.status}, Content-Type: ${res.headers.get('content-type') || 'assente'}`;
+        if (res.status >= 400) msg += '. Il file potrebbe essere stato spostato o eliminato.';
+      } catch (e) {
+        msg += `. Richiesta al server fallita: ${e.message}`;
+      }
+      this.player.error = msg;
+    },
 
     async showMeta() {
       if (this.player.meta) { this.player.meta = ''; return; }
@@ -503,6 +543,18 @@ function archiviatore() {
     },
     guessKind(path) {
       return /\.(mp3|m4a|opus|ogg|wav|flac|aac)$/i.test(path) ? 'audio' : 'video';
+    },
+    // I file elencati in un job non passano dalla scansione della galleria:
+    // ricostruiamo qui gli stessi campi che usa il player.
+    itemFromPath(rel, title) {
+      const ext = (rel.split('.').pop() || '').toLowerCase();
+      return {
+        rel_path: rel,
+        name: title || rel,
+        ext,
+        kind: this.guessKind(rel),
+        playable: !['mkv', 'avi', 'flv', 'ts'].includes(ext),
+      };
     },
     fmtSize(bytes) {
       if (!bytes) return '0 B';

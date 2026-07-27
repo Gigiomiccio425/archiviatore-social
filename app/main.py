@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     manager.shutdown()
 
 
-app = FastAPI(title=config.APP_NAME, version="1.0.0", lifespan=lifespan)
+app = FastAPI(title=config.APP_NAME, version="1.0.1", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 

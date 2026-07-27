@@ -9,13 +9,49 @@ from pathlib import Path
 from typing import Iterator
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from . import config
 
 _CACHE: dict[str, object] = {"at": 0.0, "items": []}
 _CACHE_TTL = 5.0  # secondi
 CHUNK = 1024 * 512
+
+# mimetypes dipende da /etc/mime.types, che nell'immagine slim non c'e': senza
+# questa tabella .mp4 e .m4a escono come application/octet-stream e il browser
+# rifiuta di riprodurli mostrando il play sbarrato.
+MIME_TYPES = {
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".flv": "video/x-flv",
+    ".ts": "video/mp2t",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".opus": "audio/ogg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+# Contenitori che nessun browser sa aprire: la UI deve dirlo invece di
+# mostrare un player morto.
+UNPLAYABLE_EXT = {".mkv", ".avi", ".flv", ".ts"}
+
+
+def media_type_for(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in MIME_TYPES:
+        return MIME_TYPES[suffix]
+    return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
 
 def safe_path(rel_path: str) -> Path:
@@ -68,6 +104,7 @@ def scan(force: bool = False) -> list[dict]:
                 "name": path.stem,
                 "ext": suffix.lstrip("."),
                 "kind": _kind(suffix),
+                "playable": suffix not in UNPLAYABLE_EXT,
                 "platform": parts[0] if len(parts) > 1 else "Altro",
                 "author": parts[1] if len(parts) > 2 else "",
                 "size": stat.st_size,
@@ -135,12 +172,21 @@ def _iter_range(path: Path, start: int, end: int) -> Iterator[bytes]:
 
 def media_response(path: Path, request: Request, download: bool = False) -> object:
     """FileResponse per il download, risposta 206 con Range per il player."""
-    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    media_type = media_type_for(path)
     if download:
         return FileResponse(path, media_type=media_type, filename=path.name)
 
     file_size = path.stat().st_size
     range_header = request.headers.get("range")
+
+    # HEAD: il player chiede solo gli header, inutile leggere il file
+    if request.method == "HEAD":
+        return Response(
+            status_code=200,
+            media_type=media_type,
+            headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)},
+        )
+
     if not range_header:
         return FileResponse(
             path,
